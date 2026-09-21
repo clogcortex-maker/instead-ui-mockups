@@ -1,0 +1,63 @@
+name: Render mockups
+
+on:
+  push:
+    paths:
+      - 'screens-bundle.txt'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack screens
+        run: |
+          python3 - <<'EOF'
+          import re, os
+          bundle = open('screens-bundle.txt').read()
+          parts = re.split(r'^===FILE:(.+)===$', bundle, flags=re.M)
+          it = iter(parts[1:])
+          count = 0
+          for name, content in zip(it, it):
+              name = name.strip()
+              os.makedirs(os.path.dirname(name), exist_ok=True)
+              open(name, 'w').write(content.lstrip('\n'))
+              print('wrote', name)
+              count += 1
+          assert count >= 9, 'expected at least 9 files'
+          EOF
+
+      - name: Screenshot screens (1080x1920)
+        run: |
+          mkdir -p png
+          for f in screens/0*.html; do
+            n=$(basename "$f" .html)
+            google-chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size=1080,1920 --virtual-time-budget=12000 --screenshot=png/$n.png "file://$PWD/$f"
+          done
+          ls -la png
+
+      - name: Build multi-page PDF
+        run: |
+          python3 - <<'EOF'
+          from PIL import Image
+          import glob
+          files = sorted(glob.glob('png/0*.png'))
+          assert len(files) == 8, files
+          imgs = [Image.open(f).convert('RGB') for f in files]
+          imgs[0].save('INSTEAD-App-Screens.pdf', save_all=True, append_images=imgs[1:], resolution=108)
+          print('PDF built with', len(imgs), 'pages')
+          EOF
+
+      - name: Commit rendered files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add png INSTEAD-App-Screens.pdf
+          git commit -m "render mockups (png + pdf)" || echo "nothing to commit"
+          git push
