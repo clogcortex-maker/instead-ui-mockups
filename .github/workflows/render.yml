@@ -42,6 +42,9 @@ jobs:
           done
           ls -la png
 
+      - name: Install imaging deps
+        run: pip install --quiet pillow
+
       - name: Build multi-page PDF
         run: |
           python3 - <<'EOF'
